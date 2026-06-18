@@ -174,23 +174,26 @@ conduit routes each request to a provider by the **model name**:
 
 - An explicit `provider/model` prefix always wins — e.g.
   `openai/gpt-4o`, `anthropic/claude-opus-4-8`.
-- A bare name is matched to the provider that owns it —
-  `claude-*` → Anthropic, `gpt-*` / `o3` / `text-embedding-3-*` → OpenAI.
+- A bare name is matched to the provider that owns it — `claude-*` →
+  Anthropic, `gpt-*` / `o3` / `text-embedding-3-*` → OpenAI,
+  `gemini-*` → Gemini, `voyage-*` → Voyage.
 - Anything unrecognized falls back to the default provider (Anthropic),
   so existing bare-`claude-*` clients keep working unchanged.
 
 Each provider uses the **operator's own key**, supplied as a Worker
 secret; clients only ever send the single `PROXY_KEY`.
 
-| Provider | Models | Transport | Configure |
-| --- | --- | --- | --- |
-| Anthropic (Claude Max) | `claude-*` | Tunnel (residential OAuth) | `agent login` (default; always on) |
-| OpenAI | `gpt-*`, `o*`, `text-embedding-3-*` | Edge-direct | `wrangler secret put OPENAI_API_KEY` |
+| Provider | Models | Capabilities | Transport | Configure |
+| --- | --- | --- | --- | --- |
+| Anthropic (Claude Max) | `claude-*` | chat | Tunnel (residential OAuth) | `agent login` (default; always on) |
+| OpenAI | `gpt-*`, `o*`, `text-embedding-3-*` | chat + embeddings | Edge-direct | `wrangler secret put OPENAI_API_KEY` |
+| Google Gemini | `gemini-*` | chat + embeddings | Edge-direct | `wrangler secret put GEMINI_API_KEY` |
+| Voyage AI | `voyage-*` | embeddings | Edge-direct | `wrangler secret put VOYAGE_API_KEY` |
 
 > Edge-direct providers are called straight from the Worker — no
 > residential-IP constraint applies to paid API keys, so they don't need
-> the tunnel and keep working even when your Mac is asleep. Gemini,
-> Voyage/Cohere, and local Ollama land in a later phase (see Roadmap).
+> the tunnel and keep working even when your Mac is asleep. Cohere
+> embeddings and local Ollama (tunnelled) land in a later phase (see Roadmap).
 
 ## Endpoints
 

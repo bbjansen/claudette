@@ -8,13 +8,17 @@
   "vars": {
     "TUNNEL_HOSTNAME": "conduit-agent.<your-zone>",
     "ACCESS_TEAM_DOMAIN": "<your-team>.cloudflareaccess.com"
-    // Optional: "OPENAI_BASE_URL" — override the OpenAI base URL
-    //           (default https://api.openai.com/v1) for an OpenAI-compatible gateway.
+    // Optional edge-provider base-URL overrides (point at a compatible gateway):
+    //   "OPENAI_BASE_URL" (default https://api.openai.com/v1)
+    //   "GEMINI_BASE_URL" (default https://generativelanguage.googleapis.com/v1beta/openai)
+    //   "VOYAGE_BASE_URL" (default https://api.voyageai.com/v1)
   }
   // Secrets (set via `wrangler secret put`):
   //   PROXY_KEY                    — shared bearer for inbound auth (simplest)
   //   ACCESS_AUD                   — Application Audience tag (when fronting with CF Access SSO)
   //   TUNNEL_ACCESS_CLIENT_ID      — service token client ID for the Tunnel hostname (optional)
   //   TUNNEL_ACCESS_CLIENT_SECRET  — service token secret for the Tunnel hostname (optional)
-  //   OPENAI_API_KEY               — OpenAI provider key; enables openai/* chat + embeddings (edge-direct)
+  //   OPENAI_API_KEY               — enables openai/* chat + embeddings (edge-direct)
+  //   GEMINI_API_KEY               — enables gemini/* chat + embeddings (edge-direct)
+  //   VOYAGE_API_KEY               — enables voyage/* embeddings (edge-direct)
 }

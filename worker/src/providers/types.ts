@@ -42,11 +42,12 @@ export interface Provider {
   // the agent return true unconditionally.
   configured(env: Env): boolean;
 
-  // Handle an OpenAI-shaped chat completion (streaming or not).
-  chat(args: ProviderChatArgs): Promise<Response>;
+  // Handle an OpenAI-shaped chat completion (streaming or not). Absent if the
+  // provider is embeddings-only (e.g. Voyage).
+  chat?(args: ProviderChatArgs): Promise<Response>;
 
   // Handle an OpenAI-shaped embeddings request. Absent if the provider has no
-  // embeddings API.
+  // embeddings API (e.g. Anthropic).
   embed?(args: ProviderEmbedArgs): Promise<Response>;
 
   // Static model entries for GET /v1/models aggregation.

@@ -95,6 +95,15 @@ async function handleChatCompletions(req: Request, env: Env): Promise<Response> 
 
   const rawModel = typeof openaiReq.model === "string" ? openaiReq.model : "";
   const { provider, model } = resolveModel(rawModel);
+  if (!provider.chat) {
+    return jsonResponse(501, {
+      error: {
+        type: "not_implemented",
+        message: `${capitalize(provider.id)} is an embeddings-only provider and does not support chat completions. ` +
+          `Use /v1/embeddings with one of its models instead.`,
+      },
+    });
+  }
   if (!provider.configured(env)) return providerNotConfigured(provider);
 
   const stream = openaiReq.stream === true;

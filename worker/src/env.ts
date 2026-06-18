@@ -9,10 +9,19 @@ export interface Env {
   // requests carry Cf-Access-Jwt-Assertion and this is unused.
   PROXY_KEY?: string;
 
-  // --- Phase 2 providers (operator-stored secrets; edge transport) ---
-  // OpenAI: chat completions + embeddings, called directly from the edge.
+  // --- Providers (operator-stored secrets; edge transport) ---
+  // Each edge provider speaks the OpenAI wire format. The key enables the
+  // provider; the optional *_BASE_URL overrides its endpoint (compat gateway).
+
+  // OpenAI: chat completions + embeddings.
   OPENAI_API_KEY?: string;
-  // Optional base-URL override (default https://api.openai.com/v1) — lets an
-  // operator point the OpenAI adapter at an OpenAI-compatible gateway.
   OPENAI_BASE_URL?: string;
+
+  // Google Gemini: chat + embeddings via its /v1beta/openai/ endpoint.
+  GEMINI_API_KEY?: string;
+  GEMINI_BASE_URL?: string;
+
+  // Voyage AI: dedicated embeddings.
+  VOYAGE_API_KEY?: string;
+  VOYAGE_BASE_URL?: string;
 }
