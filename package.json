@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present"
+    "build": "npm run build --workspaces --if-present",
+    "init": "node agent/dist/index.js init"
   }
 }

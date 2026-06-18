@@ -30,17 +30,15 @@ Ollama, and real embeddings — is on the [roadmap](#roadmap).
 
 ## Roadmap
 
-conduit is being generalized from a Claude-Max proxy into a
-multi-provider gateway, in phases:
+conduit grew from a Claude-Max proxy into a multi-provider gateway:
 
-1. **Rename + rebrand** (this release) — provider-neutral identity;
-   behaviour unchanged.
-2. **Provider abstraction + OpenAI** — model→provider routing, an OpenAI
-   adapter (chat + embeddings), and a real `/v1/embeddings` endpoint.
-3. **More providers** — Google Gemini, Voyage/Cohere embeddings, local
-   Ollama.
-4. **Guided onboarding** — a `conduit init` wizard that automates the
-   setup below.
+- ✅ **Rename + rebrand** — provider-neutral identity, distributable template.
+- ✅ **Provider abstraction + OpenAI** — model→provider routing, OpenAI
+  adapter (chat + embeddings), a real `/v1/embeddings` endpoint.
+- ✅ **More providers** — Google Gemini, Voyage embeddings, local Ollama.
+- ✅ **Guided onboarding** — the `conduit init` wizard (see Quick start).
+- ◦ **Next** — Cohere embeddings adapter; an optional per-provider
+  transport override (force a provider through the tunnel).
 
 Each provider is configured with the operator's own API key; clients
 only ever send the single `PROXY_KEY`.
@@ -75,7 +73,24 @@ because Anthropic's WAF blocks OAuth refresh from datacenter IPs.
 - Node 20+.
 - `brew install cloudflared`.
 
-## Setup (≈15 minutes)
+## Quick start — guided wizard
+
+```sh
+git clone https://github.com/bbjansen/conduit.git && cd conduit
+npm install && npm run build
+npm run init            # interactive onboarding wizard (or: node agent/dist/index.js init)
+```
+
+`conduit init` checks prerequisites, generates and saves your `PROXY_KEY`,
+fills in `worker/wrangler.jsonc`, sets the Worker secrets for whichever
+providers you enable, deploys the Worker, and prints the remaining
+browser-auth steps (tunnel login, per-account `agent login`) as a
+checklist. Preview everything first with `npm run init -- --dry-run` —
+it writes nothing and runs no commands.
+
+The manual steps below are the same thing by hand, if you'd rather.
+
+## Setup by hand (≈15 minutes)
 
 ### 1. Clone
 

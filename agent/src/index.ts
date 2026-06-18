@@ -14,6 +14,7 @@ import { callUpstreamRotating } from "./upstream.js";
 import { runLogin } from "./login.js";
 import { runMigrationOnce, type MigrateSource } from "./migrate.js";
 import { makeOllamaForwarder, ollamaBaseUrl } from "./ollama.js";
+import { runInit } from "./init/wizard.js";
 import type { AccountId, OAuthCredential } from "./types.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -197,10 +198,16 @@ async function runMigrateSubcommand(): Promise<void> {
   await migrateLegacyService();
 }
 
+async function runInitSubcommand(args: string[]): Promise<void> {
+  const dryRun = args.includes("--dry-run") || args.includes("-n");
+  await runInit({ dryRun });
+}
+
 function printUsage(): void {
   console.error(
     "usage:\n" +
     "  agent                      # run the proxy server (default)\n" +
+    "  agent init [--dry-run]     # interactive onboarding wizard\n" +
     "  agent login --acct <email> # capture a new Max account via PKCE\n" +
     "  agent migrate              # copy legacy 'Claude Code-credentials' into self-owned service\n"
   );
@@ -215,6 +222,8 @@ async function main(): Promise<void> {
       return runLoginSubcommand(rest);
     case "migrate":
       return runMigrateSubcommand();
+    case "init":
+      return runInitSubcommand(rest);
     case "-h":
     case "--help":
       printUsage();
