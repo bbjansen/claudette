@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${WORKER_URL:?set WORKER_URL, e.g. https://claudette.<your-workers-subdomain>.workers.dev}"
+: "${WORKER_URL:?set WORKER_URL, e.g. https://conduit.<your-workers-subdomain>.workers.dev}"
 
 # Auth mode: PROXY_KEY for the bearer path, or cloudflared access curl for CF Access SSO.
-PROXY_KEY="${PROXY_KEY:-$(cat ~/.claude-max-proxy.key 2>/dev/null || true)}"
+PROXY_KEY="${PROXY_KEY:-$(cat ~/.conduit.key 2>/dev/null || true)}"
 
 if [[ -n "$PROXY_KEY" ]]; then
   AUTH_HEADER=(-H "authorization: Bearer $PROXY_KEY")

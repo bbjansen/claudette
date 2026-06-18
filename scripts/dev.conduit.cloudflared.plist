@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>dev.claudette.cloudflared</string>
+  <string>dev.conduit.cloudflared</string>
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/cloudflared</string>
@@ -11,7 +11,7 @@
     <string>/Users/USERNAME/.cloudflared/config.yml</string>
     <string>tunnel</string>
     <string>run</string>
-    <string>claudette</string>
+    <string>conduit</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
@@ -21,8 +21,8 @@
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key>
-  <string>/Users/USERNAME/Library/Logs/cloudflared-claudette.out.log</string>
+  <string>/Users/USERNAME/Library/Logs/cloudflared-conduit.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/USERNAME/Library/Logs/cloudflared-claudette.err.log</string>
+  <string>/Users/USERNAME/Library/Logs/cloudflared-conduit.err.log</string>
 </dict>
 </plist>

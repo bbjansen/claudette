@@ -1,7 +1,7 @@
 # Capturing multiple Max-account OAuth credentials
 
-claudette runs its own OAuth (PKCE) flow per Max account and stores the
-resulting tokens under the macOS Keychain service `claudette-credentials`.
+conduit runs its own OAuth (PKCE) flow per Max account and stores the
+resulting tokens under the macOS Keychain service `conduit-credentials`.
 The agent never reads from `Claude Code-credentials` (the Claude Code
 CLI's own credential location) at runtime — only during a one-shot
 migration on first start — so interactive Claude Code can run on the
@@ -12,10 +12,10 @@ same Mac with no shared credential state.
 For each Max email you want in the pool:
 
 ```sh
-node ~/projects/claudette/agent/dist/index.js login --acct you@example.com
+node ~/projects/conduit/agent/dist/index.js login --acct you@example.com
 ```
 
-(or during development: `npm --prefix ~/projects/claudette/agent run dev -- login --acct you@example.com`)
+(or during development: `npm --prefix ~/projects/conduit/agent run dev -- login --acct you@example.com`)
 
 The command opens your default browser to the Anthropic OAuth page. Sign
 in as the Max account whose email you passed in `--acct`. The browser is
@@ -32,7 +32,7 @@ curl -sS http://127.0.0.1:8787/v1/admin/accounts | jq '.accounts[].acct_id'
 
 ## First-run migration (upgraders)
 
-On first start, claudette migrates legacy credentials into its own
+On first start, conduit migrates legacy credentials into its own
 Keychain service. It tries two source services in order:
 
 1. **Primary:** `Claude Code-credentials` — the credential the Claude
@@ -44,17 +44,17 @@ Keychain service. It tries two source services in order:
 You'll see one of:
 
 ```
-[agent] migrated N credentials into "claudette-credentials"
+[agent] migrated N credentials into "conduit-credentials"
 ```
 
 The migration is idempotent. You can re-run it manually with:
 
 ```sh
-node ~/projects/claudette/agent/dist/index.js migrate
+node ~/projects/conduit/agent/dist/index.js migrate
 ```
 
-After migration, claudette and any other consumer of `Claude Code-credentials`
-drift independently — claudette refreshes its own tokens; the Claude
+After migration, conduit and any other consumer of `Claude Code-credentials`
+drift independently — conduit refreshes its own tokens; the Claude
 Code CLI refreshes the originals.
 
 ## Disabling an account temporarily
@@ -80,7 +80,7 @@ the Keychain entries.
 ## Removing an account permanently
 
 ```sh
-security delete-generic-password -s "claudette-credentials" -a "you@example.com"
+security delete-generic-password -s "conduit-credentials" -a "you@example.com"
 ```
 
 The watcher's next tick drops it from the pool.

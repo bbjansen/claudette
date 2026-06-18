@@ -1,12 +1,17 @@
-# claudette
+# conduit
 
-A self-hosted proxy that exposes your **Claude Max** subscription as a
-standard Anthropic `POST /v1/messages` endpoint, then load-balances
-requests across **N Max accounts** for combined quota. Built for
-personal use: one operator, many subscriptions, one public URL.
+A self-hostable, provider-neutral LLM gateway. You run your own
+instance: one public HTTPS URL, one inbound key, and behind it the
+providers you configure.
+
+**Today** conduit exposes your **Claude Max** subscription as a standard
+Anthropic `POST /v1/messages` endpoint (plus an OpenAI-compatible shim)
+and load-balances requests across **N Max accounts** for combined quota.
+Multi-provider support — OpenAI, Google Gemini, Voyage/Cohere, local
+Ollama, and real embeddings — is on the [roadmap](#roadmap).
 
 > **ToS note.** Anthropic's Max plan ToS is grey on programmatic use.
-> claudette is for **personal, single-user** deployment behind your own
+> conduit is for **personal, single-user** deployment behind your own
 > auth gate. Heavier sharing (multi-user, multi-tenant) raises the risk
 > of throttling or account action. You assume that risk.
 
@@ -23,6 +28,23 @@ personal use: one operator, many subscriptions, one public URL.
 - PKCE OAuth flow per account (`agent login --acct you@example.com`) —
   no credentials shared with the Claude Code CLI.
 
+## Roadmap
+
+conduit is being generalized from a Claude-Max proxy into a
+multi-provider gateway, in phases:
+
+1. **Rename + rebrand** (this release) — provider-neutral identity;
+   behaviour unchanged.
+2. **Provider abstraction + OpenAI** — model→provider routing, an OpenAI
+   adapter (chat + embeddings), and a real `/v1/embeddings` endpoint.
+3. **More providers** — Google Gemini, Voyage/Cohere embeddings, local
+   Ollama.
+4. **Guided onboarding** — a `conduit init` wizard that automates the
+   setup below.
+
+Each provider is configured with the operator's own API key; clients
+only ever send the single `PROXY_KEY`.
+
 ## Architecture
 
 ```
@@ -35,7 +57,7 @@ personal use: one operator, many subscriptions, one public URL.
 [ Cloudflare Tunnel ]                    cloudflared on your Mac
         │  http://127.0.0.1:8787
         ▼
-[ claudette agent ]                      Node, launchd, reads OAuth tokens from your Mac's Keychain
+[ conduit agent ]                      Node, launchd, reads OAuth tokens from your Mac's Keychain
         │  Authorization: Bearer <oauth>  + anthropic-beta headers
         ▼
 [ api.anthropic.com/v1/messages ]
@@ -58,8 +80,8 @@ because Anthropic's WAF blocks OAuth refresh from datacenter IPs.
 ### 1. Clone
 
 ```sh
-git clone https://github.com/bbjansen/claudette.git
-cd claudette
+git clone https://github.com/bbjansen/conduit.git
+cd conduit
 npm install
 ```
 
@@ -67,8 +89,8 @@ npm install
 
 ```sh
 cloudflared tunnel login                                # pick your zone
-cloudflared tunnel create claudette
-cloudflared tunnel route dns claudette claudette-agent.<your-zone>
+cloudflared tunnel create conduit
+cloudflared tunnel route dns conduit conduit-agent.<your-zone>
 cp cloudflared/config.yml.example ~/.cloudflared/config.yml
 # Edit ~/.cloudflared/config.yml: fill in the UUID and hostname.
 ```
@@ -78,7 +100,7 @@ cp cloudflared/config.yml.example ~/.cloudflared/config.yml
 ```sh
 cd worker
 # Edit wrangler.jsonc:
-#   TUNNEL_HOSTNAME → "claudette-agent.<your-zone>"
+#   TUNNEL_HOSTNAME → "conduit-agent.<your-zone>"
 #   ACCESS_TEAM_DOMAIN → "<your-team>.cloudflareaccess.com"  (or leave default if not using Access)
 npx wrangler login
 PROXY_KEY="$(openssl rand -hex 32)"
@@ -101,8 +123,8 @@ node dist/index.js login --acct you@example.com
 
 ```sh
 ./scripts/install-launchd.sh           # registers the agent under launchd
-cp scripts/dev.claudette.cloudflared.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.claudette.cloudflared.plist
+cp scripts/dev.conduit.cloudflared.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.conduit.cloudflared.plist
 ```
 
 ### 6. Verify
@@ -111,7 +133,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.claudette.cloudflare
 curl -sS http://127.0.0.1:8787/v1/admin/accounts | jq
 # → JSON snapshot of the pool with your captured accounts.
 
-WORKER_URL=https://claudette.<your-workers-subdomain>.workers.dev \
+WORKER_URL=https://conduit.<your-workers-subdomain>.workers.dev \
 PROXY_KEY=$PROXY_KEY \
   ./scripts/e2e.sh
 # → "PASS" after gate / non-streaming / streaming legs.
@@ -121,7 +143,7 @@ PROXY_KEY=$PROXY_KEY \
 
 ```sh
 PROXY_KEY=$(cat secrets/proxy-key)  # or wherever you saved it
-curl -X POST https://claudette.<your-workers-subdomain>.workers.dev/v1/messages \
+curl -X POST https://conduit.<your-workers-subdomain>.workers.dev/v1/messages \
   -H "authorization: Bearer $PROXY_KEY" \
   -H "content-type: application/json" \
   -d '{"model":"claude-haiku-4-5","max_tokens":64,"messages":[{"role":"user","content":"Hello"}]}'
@@ -131,7 +153,7 @@ Anthropic SDK clients:
 
 ```py
 from anthropic import Anthropic
-client = Anthropic(api_key=PROXY_KEY, base_url="https://claudette.<your-workers-subdomain>.workers.dev")
+client = Anthropic(api_key=PROXY_KEY, base_url="https://conduit.<your-workers-subdomain>.workers.dev")
 msg = client.messages.create(model="claude-haiku-4-5", max_tokens=64,
                              messages=[{"role":"user","content":"hi"}])
 ```
@@ -141,7 +163,7 @@ OpenAI SDK clients pointed at the shim:
 ```py
 from openai import OpenAI
 client = OpenAI(api_key=PROXY_KEY,
-                base_url="https://claudette.<your-workers-subdomain>.workers.dev/v1")
+                base_url="https://conduit.<your-workers-subdomain>.workers.dev/v1")
 resp = client.chat.completions.create(model="claude-haiku-4-5",
                                       messages=[{"role":"user","content":"hi"}])
 ```
@@ -164,7 +186,7 @@ Access is configured in front, a valid Access JWT.
 ## Adding more accounts later
 
 ```sh
-node ~/projects/claudette/agent/dist/index.js login --acct second@example.com
+node ~/projects/conduit/agent/dist/index.js login --acct second@example.com
 ```
 
 The agent's `KeychainWatcher` adds the new account to the pool within 5s
@@ -172,7 +194,7 @@ without a restart.
 
 ## Auth modes
 
-claudette supports two inbound auth modes; you can mix them:
+conduit supports two inbound auth modes; you can mix them:
 
 1. **Bearer (recommended for personal use).** `Authorization: Bearer <PROXY_KEY>`
    — a single shared secret set via `wrangler secret put PROXY_KEY`. Or
@@ -194,8 +216,8 @@ provides a stable public URL with edge auth.
 ## FAQ
 
 **Does this break interactive Claude Code on the same Mac?**
-No. claudette stores its tokens under a separate Keychain service
-(`claudette-credentials`); the Claude Code CLI keeps using
+No. conduit stores its tokens under a separate Keychain service
+(`conduit-credentials`); the Claude Code CLI keeps using
 `Claude Code-credentials` and refreshes independently.
 
 **What if Anthropic rate-limits a model on one account?**

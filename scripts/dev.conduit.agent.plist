@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>dev.claudette.agent</string>
+  <string>dev.conduit.agent</string>
   <key>ProgramArguments</key>
   <array>
     <string>/usr/local/bin/node</string>
-    <string>/Users/USERNAME/projects/claudette/agent/dist/index.js</string>
+    <string>/Users/USERNAME/projects/conduit/agent/dist/index.js</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
@@ -15,12 +15,12 @@
     <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>WorkingDirectory</key>
-  <string>/Users/USERNAME/projects/claudette</string>
+  <string>/Users/USERNAME/projects/conduit</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key>
-  <string>/Users/USERNAME/Library/Logs/claudette.out.log</string>
+  <string>/Users/USERNAME/Library/Logs/conduit.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/USERNAME/Library/Logs/claudette.err.log</string>
+  <string>/Users/USERNAME/Library/Logs/conduit.err.log</string>
 </dict>
 </plist>

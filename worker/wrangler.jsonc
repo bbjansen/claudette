@@ -1,12 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "claudette",
+  "name": "conduit",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "vars": {
-    "TUNNEL_HOSTNAME": "claudette-agent.bobjansen.dev",
+    "TUNNEL_HOSTNAME": "conduit-agent.<your-zone>",
     "ACCESS_TEAM_DOMAIN": "<your-team>.cloudflareaccess.com"
   }
   // Secrets (set via `wrangler secret put`):

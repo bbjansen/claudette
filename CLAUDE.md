@@ -1,4 +1,4 @@
-# claude-max-proxy — project guidance
+# conduit — project guidance
 
 ## Memory (nram)
 

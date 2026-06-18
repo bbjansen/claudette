@@ -12,13 +12,19 @@ import {
 import { createServer } from "./server.js";
 import { callUpstreamRotating } from "./upstream.js";
 import { runLogin } from "./login.js";
-import { runMigrationOnce } from "./migrate.js";
+import { runMigrationOnce, type MigrateSource } from "./migrate.js";
 import type { AccountId, OAuthCredential } from "./types.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const LOCK_PATH = path.join(os.homedir(), ".claude", ".proxy-refresh.lock");
-const NEW_SERVICE = "claudette-credentials";
+const NEW_SERVICE = "conduit-credentials";
+// Historical credential sources, tried in order (most recent first) by the
+// first-run migration. The operator's live creds currently live under
+// `claudette-credentials`; fresh installs have only `Claude Code-credentials`;
+// `claude-max-proxy-credentials` is the oldest agent build. Each name is a
+// fallback, not an extender — the first non-empty source wins.
+const CLAUDETTE_OLD_SERVICE = "claudette-credentials";
 const PRIMARY_OLD_SERVICE = "Claude Code-credentials";
 const SECONDARY_OLD_SERVICE = "claude-max-proxy-credentials";
 
@@ -97,14 +103,23 @@ async function readOldServiceCredential(service: string, acctId: AccountId): Pro
   } catch { return null; }
 }
 
+function legacySource(service: string): MigrateSource {
+  return {
+    list: () => listKeychainAccounts(service),
+    read: (acctId) => readOldServiceCredential(service, acctId),
+  };
+}
+
 async function migrateLegacyService(): Promise<void> {
   await runMigrationOnce({
-    listOld: () => listKeychainAccounts(PRIMARY_OLD_SERVICE),
-    readOld: (acctId) => readOldServiceCredential(PRIMARY_OLD_SERVICE, acctId),
     listNew: () => listKeychainAccounts(NEW_SERVICE),
     writeNew: async (acctId, cred) => { await new KeychainStore(acctId).write(cred); },
-    secondaryListOld: () => listKeychainAccounts(SECONDARY_OLD_SERVICE),
-    secondaryReadOld: (acctId) => readOldServiceCredential(SECONDARY_OLD_SERVICE, acctId),
+    newServiceName: NEW_SERVICE,
+    sources: [
+      legacySource(CLAUDETTE_OLD_SERVICE),
+      legacySource(PRIMARY_OLD_SERVICE),
+      legacySource(SECONDARY_OLD_SERVICE),
+    ],
     log: (m) => console.log(m),
   });
 }

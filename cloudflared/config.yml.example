@@ -1,9 +1,9 @@
-# claudette tunnel config — copy to ~/.cloudflared/config.yml and substitute
+# conduit tunnel config — copy to ~/.cloudflared/config.yml and substitute
 # the placeholder values.
 
-tunnel: claudette
+tunnel: conduit
 credentials-file: /Users/USERNAME/.cloudflared/<TUNNEL_UUID>.json
 ingress:
-  - hostname: claudette-agent.<your-zone>
+  - hostname: conduit-agent.<your-zone>
     service: http://localhost:8787
   - service: http_status:404
