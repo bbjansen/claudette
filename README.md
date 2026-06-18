@@ -168,14 +168,38 @@ resp = client.chat.completions.create(model="claude-haiku-4-5",
                                       messages=[{"role":"user","content":"hi"}])
 ```
 
+## Providers & model routing
+
+conduit routes each request to a provider by the **model name**:
+
+- An explicit `provider/model` prefix always wins — e.g.
+  `openai/gpt-4o`, `anthropic/claude-opus-4-8`.
+- A bare name is matched to the provider that owns it —
+  `claude-*` → Anthropic, `gpt-*` / `o3` / `text-embedding-3-*` → OpenAI.
+- Anything unrecognized falls back to the default provider (Anthropic),
+  so existing bare-`claude-*` clients keep working unchanged.
+
+Each provider uses the **operator's own key**, supplied as a Worker
+secret; clients only ever send the single `PROXY_KEY`.
+
+| Provider | Models | Transport | Configure |
+| --- | --- | --- | --- |
+| Anthropic (Claude Max) | `claude-*` | Tunnel (residential OAuth) | `agent login` (default; always on) |
+| OpenAI | `gpt-*`, `o*`, `text-embedding-3-*` | Edge-direct | `wrangler secret put OPENAI_API_KEY` |
+
+> Edge-direct providers are called straight from the Worker — no
+> residential-IP constraint applies to paid API keys, so they don't need
+> the tunnel and keep working even when your Mac is asleep. Gemini,
+> Voyage/Cohere, and local Ollama land in a later phase (see Roadmap).
+
 ## Endpoints
 
 | Method | Path | Format | Notes |
 | --- | --- | --- | --- |
-| `POST` | `/v1/messages` | Anthropic | Pass-through, streaming SSE preserved |
-| `POST` | `/v1/chat/completions` | OpenAI | Translated to/from Anthropic |
-| `GET`  | `/v1/models` | OpenAI list | Static list of Claude models |
-| `POST` | `/v1/embeddings` | OpenAI | Returns 501 — Anthropic has no embeddings API |
+| `POST` | `/v1/messages` | Anthropic | Anthropic-native pass-through (Claude Max), streaming SSE preserved |
+| `POST` | `/v1/chat/completions` | OpenAI | Universal — routed to any provider by model name |
+| `GET`  | `/v1/models` | OpenAI list | Aggregated across every configured provider |
+| `POST` | `/v1/embeddings` | OpenAI | Real for embedding-capable providers (OpenAI); 501 when routed to Anthropic |
 | `GET`  | `/v1/admin/accounts` | Custom | Pool snapshot (cooldown, last-used, disabled) |
 | `POST` | `/v1/admin/accounts/{id}/disable` | Custom | Skip account in selector |
 | `POST` | `/v1/admin/accounts/{id}/enable` | Custom | Re-include after disable |

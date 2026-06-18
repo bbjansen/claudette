@@ -1,51 +1,12 @@
 import * as jose from "jose";
-import {
-  openaiToAnthropic,
-  anthropicToOpenai,
-  anthropicErrorToOpenai,
-  anthropicSseToOpenaiSse,
-  modelsList,
-  type OpenAIChatRequest,
-  type AnthropicMessageResponse,
-} from "./openai-shim.js";
+import type { Env } from "./env.js";
+import { jsonResponse, passThroughResponse } from "./http.js";
+import { buildTunnelHeaders, callTunnel } from "./tunnel.js";
+import { resolveModel, allProviders } from "./providers/registry.js";
+import type { Provider } from "./providers/types.js";
+import type { OpenAIChatRequest } from "./openai-shim.js";
 
-export interface Env {
-  TUNNEL_HOSTNAME: string;
-  ACCESS_TEAM_DOMAIN: string;
-  ACCESS_AUD: string;
-  TUNNEL_ACCESS_CLIENT_ID: string;
-  TUNNEL_ACCESS_CLIENT_SECRET: string;
-  // Optional shared-bearer fallback for inbound auth, used when CF Access is
-  // not (yet) configured in front of the Worker. When CF Access is in place,
-  // requests carry Cf-Access-Jwt-Assertion and this is unused.
-  PROXY_KEY?: string;
-}
-
-const HOP_BY_HOP = new Set([
-  "connection",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailers",
-  "transfer-encoding",
-  "upgrade",
-  "content-encoding",
-  "content-length",
-]);
-
-// Request headers we are willing to forward to the tunnel. `anthropic-version`
-// is intentionally NOT here: the agent always pins its own version on the
-// upstream call, so forwarding a client-supplied value would be silently
-// overridden and gives a false sense of control. `anthropic-beta` IS
-// forwarded so the agent can merge the client's requested betas (e.g.
-// context-management-2025-06-27) with the OAuth bearer beta it must add.
-const FORWARD_HEADERS = new Set([
-  "accept",
-  "content-type",
-  "x-account-hint",
-  "anthropic-beta",
-]);
+export type { Env };
 
 const jwksCache = new Map<string, ReturnType<typeof jose.createRemoteJWKSet>>();
 
@@ -62,13 +23,6 @@ async function verifyAccessJwt(jwt: string, env: Env): Promise<void> {
   await jose.jwtVerify(jwt, getJwks(env.ACCESS_TEAM_DOMAIN), {
     audience: env.ACCESS_AUD,
     issuer: `https://${env.ACCESS_TEAM_DOMAIN}`,
-  });
-}
-
-function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
   });
 }
 
@@ -106,42 +60,24 @@ async function authorize(req: Request, env: Env, skip: boolean): Promise<Respons
   return null;
 }
 
-function applyTunnelAuth(headers: Headers, env: Env): void {
-  if (env.TUNNEL_ACCESS_CLIENT_ID && env.TUNNEL_ACCESS_CLIENT_SECRET) {
-    headers.set("cf-access-client-id", env.TUNNEL_ACCESS_CLIENT_ID);
-    headers.set("cf-access-client-secret", env.TUNNEL_ACCESS_CLIENT_SECRET);
-  }
+function capitalize(s: string): string {
+  return s.length === 0 ? s : s[0]!.toUpperCase() + s.slice(1);
 }
 
-function buildTunnelHeaders(req: Request, env: Env): Headers {
-  const fwd = new Headers();
-  for (const [k, v] of req.headers.entries()) {
-    if (FORWARD_HEADERS.has(k.toLowerCase())) fwd.set(k, v);
-  }
-  applyTunnelAuth(fwd, env);
-  return fwd;
+function providerNotConfigured(provider: Provider): Response {
+  return jsonResponse(503, {
+    error: {
+      type: "provider_not_configured",
+      code: "provider_not_configured",
+      param: null,
+      message: `Provider '${provider.id}' is selected by routing but not configured on this proxy. ` +
+        `Set ${provider.id.toUpperCase()}_API_KEY as a Worker secret (\`wrangler secret put ${provider.id.toUpperCase()}_API_KEY\`).`,
+    },
+  });
 }
 
-async function callTunnel(env: Env, body: BodyInit | null, headers: Headers): Promise<Awaited<ReturnType<typeof fetch>> | { error: string }> {
-  try {
-    return await fetch(`https://${env.TUNNEL_HOSTNAME}/v1/messages`, { method: "POST", headers, body });
-  } catch (e) {
-    return { error: (e as Error).message };
-  }
-}
-
-function passThroughResponse(upstream: Awaited<ReturnType<typeof fetch>>): Response {
-  const outHeaders = new Headers();
-  for (const [k, v] of upstream.headers.entries()) {
-    if (HOP_BY_HOP.has(k.toLowerCase())) continue;
-    outHeaders.set(k, v);
-  }
-  return new Response(
-    upstream.body as unknown as ReadableStream<Uint8Array> | null,
-    { status: upstream.status, headers: outHeaders },
-  );
-}
-
+// POST /v1/messages — Anthropic-native passthrough to the tunnel (Claude Max).
+// Forwarded verbatim; the agent pins anthropic-version/beta and OAuth bearer.
 async function handleAnthropicMessages(req: Request, env: Env): Promise<Response> {
   const headers = buildTunnelHeaders(req, env);
   const upstream = await callTunnel(env, req.body, headers);
@@ -149,63 +85,53 @@ async function handleAnthropicMessages(req: Request, env: Env): Promise<Response
   return passThroughResponse(upstream);
 }
 
+// POST /v1/chat/completions — universal endpoint. Resolve model → provider,
+// then dispatch to that provider's adapter (Anthropic via tunnel, OpenAI via
+// edge, …).
 async function handleChatCompletions(req: Request, env: Env): Promise<Response> {
   let openaiReq: OpenAIChatRequest;
   try { openaiReq = await req.json() as OpenAIChatRequest; }
   catch { return jsonResponse(400, { error: { type: "invalid_request_error", message: "body is not valid JSON" } }); }
 
-  const translation = openaiToAnthropic(openaiReq);
-  if (!translation.ok) {
-    return jsonResponse(translation.error.status, {
+  const rawModel = typeof openaiReq.model === "string" ? openaiReq.model : "";
+  const { provider, model } = resolveModel(rawModel);
+  if (!provider.configured(env)) return providerNotConfigured(provider);
+
+  const stream = openaiReq.stream === true;
+  return provider.chat({ openaiReq: { ...openaiReq, model }, model, stream, env });
+}
+
+// POST /v1/embeddings — resolve model → provider; dispatch if the provider has
+// an embeddings API, else 501 with a clear hint (Anthropic has none).
+async function handleEmbeddings(req: Request, env: Env): Promise<Response> {
+  let body: Record<string, unknown>;
+  try { body = await req.json() as Record<string, unknown>; }
+  catch { return jsonResponse(400, { error: { type: "invalid_request_error", message: "body is not valid JSON" } }); }
+
+  const rawModel = typeof body.model === "string" ? body.model : "";
+  const { provider, model } = resolveModel(rawModel);
+
+  if (!provider.embed) {
+    return jsonResponse(501, {
       error: {
-        message: translation.error.message,
-        type: translation.error.type,
-        code: "invalid_request",
-        param: null,
+        type: "not_implemented",
+        message: `${capitalize(provider.id)} does not provide embeddings via this API. ` +
+          `Configure an embeddings-capable provider (OpenAI text-embedding-3-*, Voyage, Cohere, or local Ollama) ` +
+          `and request its model (e.g. "text-embedding-3-small" or "openai/text-embedding-3-small").`,
       },
     });
   }
-  const anthropicBody = translation.body;
-  const stream = anthropicBody.stream === true;
+  if (!provider.configured(env)) return providerNotConfigured(provider);
+  return provider.embed({ body: { ...body, model }, model, env });
+}
 
-  const headers = new Headers();
-  headers.set("content-type", "application/json");
-  headers.set("accept", stream ? "text/event-stream" : "application/json");
-  applyTunnelAuth(headers, env);
-
-  const upstream = await callTunnel(env, JSON.stringify(anthropicBody), headers);
-  if ("error" in upstream) return jsonResponse(502, { error: { type: "upstream_unavailable", message: upstream.error } });
-
-  if (!upstream.ok) {
-    // Translate Anthropic error envelope to OpenAI shape so SDK error classes
-    // (RateLimitError, AuthenticationError, BadRequestError) dispatch correctly.
-    let anthropicBodyJson: unknown = null;
-    try { anthropicBodyJson = await upstream.json(); }
-    catch { /* upstream returned non-JSON; fall through with null */ }
-    return jsonResponse(upstream.status, anthropicErrorToOpenai(upstream.status, anthropicBodyJson));
-  }
-
+// GET /v1/models — aggregate the static model lists of every configured provider.
+function handleModels(env: Env): Response {
   const nowSec = Math.floor(Date.now() / 1000);
-
-  if (stream) {
-    if (!upstream.body) return jsonResponse(502, { error: { type: "upstream_unavailable", message: "no body" } });
-    const translated = anthropicSseToOpenaiSse(
-      upstream.body as unknown as ReadableStream<Uint8Array>,
-      openaiReq.model,
-      nowSec,
-    );
-    return new Response(
-      translated as unknown as ReadableStream<Uint8Array>,
-      { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } },
-    );
-  }
-
-  let anthResp: AnthropicMessageResponse;
-  try { anthResp = await upstream.json() as AnthropicMessageResponse; }
-  catch (e) {
-    return jsonResponse(502, anthropicErrorToOpenai(502, { error: { type: "api_error", message: `upstream returned non-JSON: ${(e as Error).message}` } }));
-  }
-  return jsonResponse(200, anthropicToOpenai(anthResp, nowSec));
+  const data = allProviders()
+    .filter((p) => p.configured(env))
+    .flatMap((p) => p.models(nowSec));
+  return jsonResponse(200, { object: "list", data });
 }
 
 const handler = {
@@ -218,7 +144,7 @@ const handler = {
     if (req.method === "GET" && url.pathname === "/v1/models") {
       const denied = await authorize(req, env, handler.__skipJwtVerify);
       if (denied) return denied;
-      return jsonResponse(200, modelsList(Math.floor(Date.now() / 1000)));
+      return handleModels(env);
     }
 
     if (req.method !== "POST") {
@@ -228,12 +154,7 @@ const handler = {
     if (url.pathname === "/v1/embeddings") {
       const denied = await authorize(req, env, handler.__skipJwtVerify);
       if (denied) return denied;
-      return jsonResponse(501, {
-        error: {
-          type: "not_implemented",
-          message: "Anthropic does not provide embeddings via this API. Configure a separate provider (OpenAI text-embedding-3-*, Voyage, local Ollama, etc.) for embeddings.",
-        },
-      });
+      return handleEmbeddings(req, env);
     }
 
     if (url.pathname === "/v1/messages") {
