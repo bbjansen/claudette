@@ -1,10 +1,14 @@
 import * as http from "node:http";
 import type { AccountPool } from "./pool.js";
 import { handleAccountsSnapshot, handleAccountsDisable, handleAccountsEnable } from "./admin.js";
+import type { OllamaForwarder } from "./ollama.js";
 
 export interface ServerDeps {
   pool: AccountPool;
   upstream: (body: Buffer, accept: string, pool: AccountPool, accountHint?: string | null, betaHeader?: string | null) => Promise<Response>;
+  // Optional local-Ollama relay. When set, POST /v1/ollama/chat/completions and
+  // /v1/ollama/embeddings are forwarded to the operator's local Ollama server.
+  ollama?: OllamaForwarder;
 }
 
 const HOP_BY_HOP = new Set([
@@ -14,6 +18,8 @@ const HOP_BY_HOP = new Set([
 
 const ADMIN_DISABLE = /^\/v1\/admin\/accounts\/([^/]+)\/disable$/;
 const ADMIN_ENABLE  = /^\/v1\/admin\/accounts\/([^/]+)\/enable$/;
+const OLLAMA_PREFIX = "/v1/ollama/";
+const OLLAMA_ROUTES = new Set(["/v1/ollama/chat/completions", "/v1/ollama/embeddings"]);
 
 export function createServer(deps: ServerDeps): http.Server {
   return http.createServer(async (req, res) => {
@@ -21,6 +27,9 @@ export function createServer(deps: ServerDeps): http.Server {
       const url = req.url ?? "";
       if (req.method === "POST" && url === "/v1/messages") {
         return handleMessages(req, res, deps);
+      }
+      if (req.method === "POST" && OLLAMA_ROUTES.has(url)) {
+        return handleOllama(req, res, deps, url);
       }
       if (req.method === "GET" && url === "/v1/admin/accounts") {
         return pipeResponse(res, handleAccountsSnapshot({ pool: deps.pool }));
@@ -55,6 +64,25 @@ async function handleMessages(req: http.IncomingMessage, res: http.ServerRespons
   const accountHint = pickHeader(req.headers["x-account-hint"]) ?? null;
   const betaHeader = pickHeader(req.headers["anthropic-beta"]) ?? null;
   const upstream = await deps.upstream(body, accept, deps.pool, accountHint, betaHeader);
+  await pipeWebResponse(res, upstream);
+}
+
+async function handleOllama(req: http.IncomingMessage, res: http.ServerResponse, deps: ServerDeps, url: string): Promise<void> {
+  if (!deps.ollama) {
+    return sendJson(res, 501, { error: { type: "not_implemented", message: "ollama relay is not enabled on this agent" } });
+  }
+  const body = await collectBody(req);
+  try { JSON.parse(body.toString("utf-8")); }
+  catch { return sendJson(res, 400, { error: { type: "invalid_request_error", message: "body is not valid JSON" } }); }
+  const subpath = url.slice(OLLAMA_PREFIX.length); // "chat/completions" | "embeddings"
+  const accept = pickHeader(req.headers["accept"]) ?? "application/json";
+  const upstream = await deps.ollama(subpath, body, accept);
+  await pipeWebResponse(res, upstream);
+}
+
+// Stream a web Response (from fetch) out through a node ServerResponse, dropping
+// hop-by-hop headers. Shared by the Anthropic and Ollama relays.
+async function pipeWebResponse(res: http.ServerResponse, upstream: Response): Promise<void> {
   res.statusCode = upstream.status;
   for (const [k, v] of upstream.headers.entries()) {
     if (HOP_BY_HOP.has(k.toLowerCase())) continue;

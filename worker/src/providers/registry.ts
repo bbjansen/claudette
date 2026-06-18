@@ -14,11 +14,13 @@ import { anthropicProvider } from "./anthropic.js";
 import { openaiProvider } from "./openai.js";
 import { geminiProvider } from "./gemini.js";
 import { voyageProvider } from "./voyage.js";
+import { ollamaProvider } from "./ollama.js";
 import type { Provider } from "./types.js";
 
 // owns() patterns are disjoint across providers (claude- / gpt-|o|text-embedding-
-// / gemini- / voyage-), so registry order does not create routing conflicts.
-const REGISTRY: Provider[] = [anthropicProvider, openaiProvider, geminiProvider, voyageProvider];
+// / gemini- / voyage-); Ollama owns nothing (explicit "ollama/" prefix only), so
+// registry order does not create routing conflicts.
+const REGISTRY: Provider[] = [anthropicProvider, openaiProvider, geminiProvider, voyageProvider, ollamaProvider];
 const DEFAULT_PROVIDER: Provider = anthropicProvider;
 
 export interface Resolution {

@@ -179,9 +179,11 @@ conduit routes each request to a provider by the **model name**:
   `gemini-*` → Gemini, `voyage-*` → Voyage.
 - Anything unrecognized falls back to the default provider (Anthropic),
   so existing bare-`claude-*` clients keep working unchanged.
+- **Ollama is prefix-only** (`ollama/llama3.2`) — local model names have
+  no stable prefix, so a bare name is never auto-routed there.
 
-Each provider uses the **operator's own key**, supplied as a Worker
-secret; clients only ever send the single `PROXY_KEY`.
+Each cloud provider uses the **operator's own key**, supplied as a
+Worker secret; clients only ever send the single `PROXY_KEY`.
 
 | Provider | Models | Capabilities | Transport | Configure |
 | --- | --- | --- | --- | --- |
@@ -189,11 +191,13 @@ secret; clients only ever send the single `PROXY_KEY`.
 | OpenAI | `gpt-*`, `o*`, `text-embedding-3-*` | chat + embeddings | Edge-direct | `wrangler secret put OPENAI_API_KEY` |
 | Google Gemini | `gemini-*` | chat + embeddings | Edge-direct | `wrangler secret put GEMINI_API_KEY` |
 | Voyage AI | `voyage-*` | embeddings | Edge-direct | `wrangler secret put VOYAGE_API_KEY` |
+| Ollama (local) | `ollama/<your-local-model>` | chat + embeddings | Tunnel (local) | run Ollama; agent reads `OLLAMA_BASE_URL` (default `http://127.0.0.1:11434/v1`) |
 
 > Edge-direct providers are called straight from the Worker — no
 > residential-IP constraint applies to paid API keys, so they don't need
-> the tunnel and keep working even when your Mac is asleep. Cohere
-> embeddings and local Ollama (tunnelled) land in a later phase (see Roadmap).
+> the tunnel and keep working even when your Mac is asleep. Ollama is
+> reached over the tunnel (it's local to your machine). Cohere embeddings
+> can be added trivially as another edge provider (see Roadmap).
 
 ## Endpoints
 

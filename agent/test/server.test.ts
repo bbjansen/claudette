@@ -114,4 +114,27 @@ describe("createServer", () => {
       expect(seen).toEqual([null]);
     } finally { server.close(); }
   });
+
+  it("POST /v1/ollama/chat/completions forwards to the ollama relay and pipes the response", async () => {
+    const pool = poolWith({ acctId: "a@x", token: "tA" });
+    const ollama = vi.fn(async (_subpath: string, _body: Buffer, _accept: string) =>
+      new Response('{"id":"x"}', { status: 200, headers: { "content-type": "application/json" } }));
+    const { server, url } = await startServer({ pool, upstream: async () => new Response(""), ollama });
+    try {
+      const r = await post(`${url}/v1/ollama/chat/completions`, JSON.stringify({ model: "llama3.2" }));
+      expect(r.status).toBe(200);
+      expect(r.body).toBe('{"id":"x"}');
+      expect(ollama).toHaveBeenCalledTimes(1);
+      expect(ollama.mock.calls[0]![0]).toBe("chat/completions");
+    } finally { server.close(); }
+  });
+
+  it("POST /v1/ollama/embeddings returns 501 when no ollama relay is configured", async () => {
+    const pool = poolWith({ acctId: "a@x", token: "tA" });
+    const { server, url } = await startServer({ pool, upstream: async () => new Response("") });
+    try {
+      const r = await post(`${url}/v1/ollama/embeddings`, JSON.stringify({ model: "nomic-embed-text", input: "hi" }));
+      expect(r.status).toBe(501);
+    } finally { server.close(); }
+  });
 });

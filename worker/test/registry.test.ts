@@ -49,15 +49,30 @@ describe("resolveModel — routing precedence", () => {
     expect(r.model).toBe("unknownprov/gpt-4o");
   });
 
+  it("routes ollama only via explicit prefix (owns nothing); bare local names hit the default", () => {
+    expect(resolveModel("ollama/llama3.2")).toMatchObject({ provider: { id: "ollama" }, model: "llama3.2", explicit: true });
+    // A bare local model name must NOT be claimed by ollama (owns() is false)
+    // nor mis-claimed by openai — it falls back to the default provider.
+    expect(resolveModel("llama3.2").provider.id).toBe("anthropic");
+  });
+
   it("treats an empty model name as the default provider", () => {
     expect(resolveModel("").provider.id).toBe("anthropic");
   });
 });
 
 describe("allProviders", () => {
-  it("exposes anthropic, openai, gemini, and voyage", () => {
+  it("exposes anthropic, openai, gemini, voyage, and ollama", () => {
     const ids = allProviders().map((p) => p.id).sort();
-    expect(ids).toEqual(["anthropic", "gemini", "openai", "voyage"]);
+    expect(ids).toEqual(["anthropic", "gemini", "ollama", "openai", "voyage"]);
+  });
+
+  it("ollama is tunnel transport, owns nothing, and configured (no key)", () => {
+    const ollama = allProviders().find((p) => p.id === "ollama")!;
+    expect(ollama.transport).toBe("tunnel");
+    expect(ollama.owns("llama3.2")).toBe(false);
+    expect(ollama.configured({} as never)).toBe(true);
+    expect(ollama.models(0)).toEqual([]);
   });
 
   it("anthropic is tunnel transport + always configured; edge providers are key-gated", () => {

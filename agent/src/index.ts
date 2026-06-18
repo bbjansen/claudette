@@ -13,6 +13,7 @@ import { createServer } from "./server.js";
 import { callUpstreamRotating } from "./upstream.js";
 import { runLogin } from "./login.js";
 import { runMigrationOnce, type MigrateSource } from "./migrate.js";
+import { makeOllamaForwarder, ollamaBaseUrl } from "./ollama.js";
 import type { AccountId, OAuthCredential } from "./types.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -153,6 +154,9 @@ async function runServer(): Promise<void> {
       betaHeader,
       log: (msg, extra) => console.log(`[agent] ${msg}`, extra ?? ""),
     }),
+    // Local-Ollama relay for ollama/* models routed over the tunnel. Forwards to
+    // OLLAMA_BASE_URL (default http://127.0.0.1:11434/v1); 502s if Ollama is down.
+    ollama: makeOllamaForwarder(ollamaBaseUrl()),
   });
   server.listen(PORT, HOST, () => {
     console.log(`[agent] listening on http://${HOST}:${PORT} (accounts: ${pool.accounts().join(", ")})`);
