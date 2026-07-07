@@ -3,6 +3,12 @@ import type { TokenManager } from "./tokens.js";
 
 const TIERS: ModelTier[] = ["opus", "sonnet", "haiku", "other"];
 
+// A failed token fetch (e.g. `invalid_grant` on a revoked refresh token) is
+// account-wide, not tier-specific: cool every tier so rotation skips the
+// account, long enough to absorb traffic bursts but short enough that an
+// operator re-login becomes visible without a restart.
+const TOKEN_FAILURE_COOLDOWN_MS = 15 * 60 * 1000;
+
 interface PoolEntry {
   acctId: AccountId;
   manager: TokenManager;
@@ -90,29 +96,33 @@ export class AccountPool {
         && !this.disabled.has(hint)) {
       const hintUntil = this.cooldown.get(hint)?.get(tier) ?? 0;
       if (hintUntil <= now) {
-        return this.use(hint, now);
+        const picked = await this.tryUse(hint, now);
+        if (picked) return picked;
       }
     }
 
+    const start = this.nextIdx;
     for (let i = 0; i < order.length; i++) {
-      const idx = (this.nextIdx + i) % order.length;
+      const idx = (start + i) % order.length;
       const acctId = order[idx]!;
       if (excludeSet.has(acctId) || this.disabled.has(acctId)) continue;
       const until = this.cooldown.get(acctId)?.get(tier) ?? 0;
       if (until <= now) {
+        const picked = await this.tryUse(acctId, now);
+        if (picked === null) continue;
         this.nextIdx = (idx + 1) % order.length;
-        return this.use(acctId, now);
+        return picked;
       }
     }
 
-    let bestId: AccountId | null = null;
-    let bestUntil = Number.POSITIVE_INFINITY;
-    for (const acctId of eligible) {
-      const until = this.cooldown.get(acctId)?.get(tier) ?? Number.POSITIVE_INFINITY;
-      if (until < bestUntil) { bestUntil = until; bestId = acctId; }
+    const byUntil = [...eligible].sort((a, b) =>
+      (this.cooldown.get(a)?.get(tier) ?? Number.POSITIVE_INFINITY)
+      - (this.cooldown.get(b)?.get(tier) ?? Number.POSITIVE_INFINITY));
+    for (const acctId of byUntil) {
+      const picked = await this.tryUse(acctId, now);
+      if (picked) return picked;
     }
-    if (bestId == null) throw new Error("AccountPool: pickToken found no candidate (unreachable)");
-    return this.use(bestId, now);
+    throw new Error("AccountPool: token fetch failed for every eligible account");
   }
 
   snapshot(): PoolSnapshot {
@@ -143,6 +153,18 @@ export class AccountPool {
     this.lastUsed.set(acctId, nowMs);
     const token = await this.managers.get(acctId)!.getAccessToken();
     return { acctId, token };
+  }
+
+  private async tryUse(acctId: AccountId, nowMs: number): Promise<{ acctId: AccountId; token: string } | null> {
+    try {
+      return await this.use(acctId, nowMs);
+    } catch (err) {
+      const until = nowMs + TOKEN_FAILURE_COOLDOWN_MS;
+      for (const tier of TIERS) this.markCooldown(acctId, tier, until);
+      console.warn(`[agent] token fetch failed; cooled ${TOKEN_FAILURE_COOLDOWN_MS / 60_000}min`,
+        { acctId, error: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
   }
 }
 

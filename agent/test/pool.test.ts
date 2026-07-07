@@ -10,6 +10,14 @@ function fakeManager(token: string): TokenManager {
   } as unknown as TokenManager;
 }
 
+function brokenManager(): TokenManager {
+  return {
+    async getAccessToken(): Promise<string> { throw new Error("refresh 400: invalid_grant"); },
+    async forceRefresh(): Promise<string> { throw new Error("refresh 400: invalid_grant"); },
+    adoptExternalCredential() {},
+  } as unknown as TokenManager;
+}
+
 describe("AccountPool", () => {
   const NOW = 1_700_000_000_000;
   const clock = () => NOW;
@@ -200,5 +208,29 @@ describe("AccountPool — pickToken hint", () => {
     const p = new AccountPool([A, B, C], { clock });
     const pick = await p.pickToken("opus", ["c@z"], "c@z");
     expect(pick.acctId).toBe("a@x");
+  });
+
+  it("rotates past an account whose token fetch fails and cools it on every tier", async () => {
+    const BAD = { acctId: "bad@x", manager: brokenManager() };
+    const p = new AccountPool([BAD, B, C], { clock });
+    const pick = await p.pickToken("opus");
+    expect(pick.acctId).toBe("b@y");
+    const bad = p.snapshot().accounts.find(a => a.acctId === "bad@x")!;
+    expect(bad.cooldown.opus).not.toBeNull();
+    expect(bad.cooldown.sonnet).not.toBeNull();
+    expect(bad.cooldown.haiku).not.toBeNull();
+    expect(bad.cooldown.other).not.toBeNull();
+  });
+
+  it("falls through to rotation when the hinted account's token fetch fails", async () => {
+    const BAD = { acctId: "bad@x", manager: brokenManager() };
+    const p = new AccountPool([A, B, BAD], { clock });
+    const pick = await p.pickToken("opus", [], "bad@x");
+    expect(pick.acctId).toBe("a@x");
+  });
+
+  it("rejects (without crashing callers) when every eligible account fails token fetch", async () => {
+    const p = new AccountPool([{ acctId: "bad@x", manager: brokenManager() }], { clock });
+    await expect(p.pickToken("opus")).rejects.toThrow(/token fetch/);
   });
 });

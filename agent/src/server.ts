@@ -25,26 +25,29 @@ export function createServer(deps: ServerDeps): http.Server {
   return http.createServer(async (req, res) => {
     try {
       const url = req.url ?? "";
+      // `return await` (not bare `return`) so rejections resolve inside this
+      // try block; a bare returned promise rejects outside it and kills the
+      // process as an unhandled rejection.
       if (req.method === "POST" && url === "/v1/messages") {
-        return handleMessages(req, res, deps);
+        return await handleMessages(req, res, deps);
       }
       if (req.method === "POST" && OLLAMA_ROUTES.has(url)) {
-        return handleOllama(req, res, deps, url);
+        return await handleOllama(req, res, deps, url);
       }
       if (req.method === "GET" && url === "/v1/admin/accounts") {
-        return pipeResponse(res, handleAccountsSnapshot({ pool: deps.pool }));
+        return await pipeResponse(res, handleAccountsSnapshot({ pool: deps.pool }));
       }
       if (req.method === "POST") {
         const disableMatch = url.match(ADMIN_DISABLE);
         if (disableMatch) {
           const acctId = decodeURIComponent(disableMatch[1]!);
           const body = (await collectBody(req)).toString("utf-8");
-          return pipeResponse(res, handleAccountsDisable({ pool: deps.pool }, acctId, body));
+          return await pipeResponse(res, handleAccountsDisable({ pool: deps.pool }, acctId, body));
         }
         const enableMatch = url.match(ADMIN_ENABLE);
         if (enableMatch) {
           const acctId = decodeURIComponent(enableMatch[1]!);
-          return pipeResponse(res, handleAccountsEnable({ pool: deps.pool }, acctId));
+          return await pipeResponse(res, handleAccountsEnable({ pool: deps.pool }, acctId));
         }
       }
       sendJson(res, 404, { error: { type: "not_found", message: `${req.method} ${url} not handled` } });
