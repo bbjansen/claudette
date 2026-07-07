@@ -137,4 +137,15 @@ describe("createServer", () => {
       expect(r.status).toBe(501);
     } finally { server.close(); }
   });
+
+  it("POST /v1/messages returns 500 when the upstream rejects (no process crash)", async () => {
+    const pool = poolWith({ acctId: "a@x", token: "tA" });
+    const upstreamFake = vi.fn(async () => { throw new Error("refresh 400: invalid_grant"); });
+    const { server, url } = await startServer({ pool, upstream: upstreamFake });
+    try {
+      const r = await post(`${url}/v1/messages`, JSON.stringify({ model: "claude-haiku-4-5" }));
+      expect(r.status).toBe(500);
+      expect(JSON.parse(r.body).error.type).toBe("internal_error");
+    } finally { server.close(); }
+  });
 });
